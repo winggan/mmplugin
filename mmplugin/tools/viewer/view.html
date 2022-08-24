@@ -1,0 +1,513 @@
+<head>
+  <title>Multi-Layer Viewer - {__TITLE__}</title>
+  <script src="fabric.js"></script>
+  <style>
+    input[type="radio"] {
+       display: none;
+    }
+
+    input[type="radio"] + div {
+       height: 40px;
+       width: 40px;
+       display: inline-block;
+       cursor: pointer;
+       vertical-align: middle;
+       background: #FFF;
+       border: 1px solid #d2d2d2;
+       border-radius: 100%;
+    }
+
+    input[type="radio"] + div:hover {
+        border-color: #c2c2c2;
+    }
+
+    input[type="radio"]:checked + div {
+        background:gray;
+    }
+
+    div.shape_json {
+      display: none;
+    }
+
+    .tooltip:hover {
+      border-width: 2px;
+      border-color: black;
+      border-style: solid;
+    }
+
+    /* Tooltip container */
+    .tooltip {
+      position: relative;
+      display: inline-block;
+      border-bottom: 1px dotted black; /* If you want dots under the hoverable text */
+    }
+
+    /* Tooltip text */
+    .tooltip .tooltiptext {
+      visibility: hidden;
+      width: 300px;
+      background-color: #0000007f;
+      color: #fff;
+      text-align: center;
+      padding: 5px 0;
+      border-radius: 6px;
+      top: -5px;
+      right: 105%;
+    
+      /* Position the tooltip text - see examples below! */
+      position: absolute;
+      z-index: 1;
+    }
+
+    /* Show the tooltip text when you mouse over the tooltip container */
+    .tooltip:hover .tooltiptext {
+      visibility: visible;
+    }
+
+  </style>
+</head>
+
+<body>
+<div style="float: left;">
+<canvas id="mainview" width="800" height="800" ></canvas>
+</div>
+<div style="float: left; overflow-wrap: anywhere; width: 18%">
+  <a href="{__PREV__}" id="gotoprev">Prev</a>
+  <span>{__INDEX__} / {__TOTAL__}</span>
+  <a href="{__NEXT__}" id="gotonext">Next</a>
+  <br/>
+  <span>{__TITLE__}</span><br/>
+  <input type="button" id="resetview" value="Reset View"></input>
+  <fieldset id="layerlist">
+    <legend>Layers</legend>
+  </fieldset>
+  <div id="layertmp" style="display: none;">
+    <label>
+      <input type="radio" value="{value}" name="currentlayer"><div></div>
+      <label >{key}</label><br/>
+    </label>
+  </div>
+  <script id="layerinit">
+  (function() {
+    var layers = {__LAYERS__};
+    console.log(layers);
+    var layerlist = document.getElementById('layerlist')
+    var layertmp = document.getElementById('layertmp').innerHTML
+    for (var key in layers) {
+      // seems that broswer does not support tiff
+      if (layers[key].endsWith('tiff')) { continue; }
+      var url = layers[key];
+      var row = layertmp.replace('{value}', url).replace('{key}', key);
+      layerlist.innerHTML += row
+    }
+  })();
+  </script>
+  <span>All Defects:</span>
+  <div id="defectlist">
+  </div>
+  <div id="defecttmp" style="display: none;">
+    <label style="background-color: {color}; color: {fontcolor}" class="tooltip">
+      <input type="checkbox" checked="true" id="shape{index}"/>{tag}
+      <div class="shape_json">{shape_json}</div><br/>
+      <span class="tooltiptext">{tag_full}</span>
+    </label><br/>
+  </div>
+  <script id="defectinit">
+  (function() {
+    var defects = {__DEFECTS__};
+    var palette = {__PALETTE__};
+    var defectlist = document.getElementById('defectlist');
+    var defecttmp = document.getElementById('defecttmp').innerHTML;
+    [...Array(defects.length).keys()].forEach(index => {
+      var df = defects[index];
+      var tag_full = df.tag.replaceAll('\n','<br/>');
+      var tag = tag_full.split('<br/>', 1)[0].substring(0, 30);
+      var font_color = df.category == 'defect' ? 'black' : 'gray';
+      var show_at_first = df.category == 'defect' ? 'checked="true"' : '';
+      var row = defecttmp.replace('{tag}', tag).replace('{shape_json}', JSON.stringify(df));
+      row = row.replace('{color}', palette[df.tag.split('|', 1)[0]]).replace('{index}', index);
+      row = row.replace('{tag_full}', tag_full).replace('{fontcolor}', font_color);
+      row = row.replace('checked="true"', show_at_first);
+      defectlist.innerHTML += row
+    });
+  })();
+  </script>
+</div>
+
+<script>
+(function() {
+  // manually initialize 2 filter backend to give ability to switch:
+  var webglBackend;
+  try {
+    webglBackend = new fabric.WebglFilterBackend();
+  } catch (e) {
+    console.log(e)
+  }
+  var canvas2dBackend = new fabric.Canvas2dFilterBackend()
+
+  fabric.filterBackend = fabric.initFilterBackend();
+  fabric.Object.prototype.transparentCorners = false;
+  var $ = function(id){return document.getElementById(id)};
+
+  function applyFilter(index, filter) {
+    var obj = canvas.getActiveObject();
+    obj.filters[index] = filter;
+    var timeStart = +new Date();
+    obj.applyFilters();
+    var timeEnd = +new Date();
+    var dimString = canvas.getActiveObject().width + ' x ' +
+      canvas.getActiveObject().height;
+    $('bench').innerHTML = dimString + 'px ' +
+      parseFloat(timeEnd-timeStart) + 'ms';
+    canvas.renderAll();
+  }
+
+  function getFilter(index) {
+    var obj = canvas.getActiveObject();
+    return obj.filters[index];
+  }
+
+  function applyFilterValue(index, prop, value) {
+    var obj = canvas.getActiveObject();
+    if (obj.filters[index]) {
+      obj.filters[index][prop] = value;
+      var timeStart = +new Date();
+      obj.applyFilters();
+      var timeEnd = +new Date();
+      var dimString = canvas.getActiveObject().width + ' x ' +
+        canvas.getActiveObject().height;
+      $('bench').innerHTML = dimString + 'px ' +
+        parseFloat(timeEnd-timeStart) + 'ms';
+      canvas.renderAll();
+    }
+  }
+
+  fabric.Object.prototype.padding = 5;
+  fabric.Object.prototype.transparentCorners = false;
+
+  var canvas = this.__canvas = new fabric.Canvas('mainview'),
+      f = fabric.Image.filters;
+
+  canvas.setDimensions({width: window.innerWidth * 0.8,
+                        height: window.innerHeight * 0.9})
+  window.onresize = function(e) {
+    canvas.setDimensions({width: window.innerWidth * 0.8,
+                          height: window.innerHeight * 0.9})
+  }
+
+  // canvas.on({
+  //   'selection:created': function() {
+  //     fabric.util.toArray(document.getElementsByTagName('input'))
+  //                         .forEach(function(el){ el.disabled = false; })
+
+  //     var filters = ['grayscale', 'invert', 'remove-color', 'sepia', 'brownie',
+  //                     'brightness', 'contrast', 'saturation', 'vibrance', 'noise', 'vintage',
+  //                     'pixelate', 'blur', 'sharpen', 'emboss', 'technicolor',
+  //                     'polaroid', 'blend-color', 'gamma', 'kodachrome',
+  //                     'blackwhite', 'blend-image', 'hue', 'resize'];
+
+  //     for (var i = 0; i < filters.length; i++) {
+  //       $(filters[i]) && (
+  //       $(filters[i]).checked = !!canvas.getActiveObject().filters[i]);
+  //     }
+  //   },
+  //   'selection:cleared': function() {
+  //     fabric.util.toArray(document.getElementsByTagName('input'))
+  //                         .forEach(function(el){ el.disabled = true; })
+  //   }
+  // });
+  var entering_label = function(node) {
+      node.style['border-width'] = '2px'
+      node.style['border-color'] = 'black'
+      node.style['border-style'] = 'solid'
+  }
+  var leaving_label = function(node) {
+      node.style['border-width'] = null 
+      node.style['border-color'] = null
+      node.style['border-style'] = null
+  }
+  canvas.on({
+    'selection:created': function(e) {
+      // console.log(e)
+      e.selected.filter(shape => shape.shape_id != undefined).forEach(
+        shape => entering_label($(shape.shape_id).parentNode)
+      )
+    },
+    'selection:updated': function(e) {
+      // console.log(e)
+      e.selected.filter(shape => shape.shape_id != undefined).forEach(
+        shape => entering_label($(shape.shape_id).parentNode)
+      )
+      e.deselected.filter(shape => shape.shape_id != undefined).forEach(
+        shape => leaving_label($(shape.shape_id).parentNode)
+      )
+    },
+    'selection:cleared': function(e) {
+      // console.log(e)
+      e.deselected.filter(shape => shape.shape_id != undefined).forEach(
+        shape => leaving_label($(shape.shape_id).parentNode)
+      )
+    }
+  })
+
+  var initial_scale = 1;
+  var layer_map = {}
+  var loadLayer = function(url) {
+    fabric.Image.fromURL(url, function(img) {
+        img.lockMovementX = true;
+        img.lockMovementY = true;
+        img.lockRotation = true;
+        img.lockScalingFlip = true
+        img.lockScalingX = true
+        img.lockScalingY = true
+        img.lockSkewingX = true
+        img.lockSkewingY = true
+        img.selectable = false
+        img.set({ left: 0, top: 0});
+        console.log('img.width', img.width, 'canvas.width', canvas.width)
+        canvas.add(img);
+        img.moveTo(0)
+        layer_map[url] = img
+        if (Math.abs(initial_scale / (canvas.width / img.width) - 1) > 1e-3) {
+          initial_scale = canvas.width / img.width;
+          canvas.viewportTransform = [initial_scale, 0, 0, initial_scale, 0, 0]
+        }
+    });
+  }
+
+  $("resetview").onclick = function(e) {
+    canvas.viewportTransform = [initial_scale, 0, 0, initial_scale, 0, 0];
+    canvas.renderAll()
+  };
+
+  var shape_map = {}
+  var palette = {__PALETTE__};
+  var drawShape = function(shape) {
+    console.log(shape.shape_type);
+    var category = shape.category;
+    var leftmost = Infinity
+    var topmost = Infinity
+    if (shape.shape_type === 'MultiPolygon' || shape.shape_type == 'Polygon') {
+      var points = shape.shape_type == 'Polygon' ? [shape.points] : shape.points
+      var polys = points.map(arr => {
+        var pts = [...Array(arr.length / 2).keys()].map(
+          idx => { return {x: arr[idx * 2], y: arr[idx * 2 + 1]};}
+        )
+        var top = Math.min(...pts.map(p => p.y))
+        var left = Math.min(...pts.map(p => p.x))
+        var pts = pts.map(p => {return {x: p.x - left, y: p.y - top}})
+        leftmost = left < leftmost ? left : leftmost
+        topmost = top < topmost ? top : topmost
+        return new fabric.Polygon(pts, {
+          stroke: palette[shape.tag.split('|', 1)[0]],
+          strokeDashArray: shape.category === 'defect' ? [] : [5],
+          left: left,
+          top: top,
+          fill: '#00000000'
+        })
+      });
+    } else if (shape.shape_type == 'Rectangle') {
+      throw 'NotImplementedError'
+    } else if (shape.shape_type == 'Line') {
+      throw 'NotImplementedError'
+    } else {
+      throw 'NotSupportedError'
+    }
+    console.log(leftmost, topmost)
+    var tag = new fabric.Text(shape.tag.split('\n', 1)[0].substring(0, 30), {
+      fill: palette[shape.tag.split('|', 1)[0]],
+      textBackgroundColor: 'transparent',
+      strokeWidth: 10,
+      left: leftmost,
+      fontSize: 20,
+      top: topmost,
+      originY: 'bottom',
+    });
+    var g = new fabric.Group(polys.concat([tag]), {
+      lockMovementX: true,
+      lockMovementY: true,
+      lockRotation: true,
+      lockScalingFlip: true,
+      lockScalingX: true,
+      lockScalingY: true,
+      lockSkewingX: true,
+      lockSkewingY: true,
+    });
+    canvas.add(g);
+    canvas.bringToFront(g);
+    g.visible = shape.category === 'defect' ? true : false;
+    return g
+  }
+
+  canvas.on('mouse:wheel', function(opt) {
+    var delta = opt.e.deltaY;
+    var zoom = canvas.getZoom();
+    zoom *= 0.999 ** delta;
+    if (zoom > 20) zoom = 20;
+    if (zoom < 0.01) zoom = 0.01;
+    this.setZoom(zoom);
+    // keep where mouse pointing not to move
+    var pt_before = opt.pointer
+    var pt_origin = opt.absolutePointer
+    var trans = this.viewportTransform
+    var pt_after = {
+      x: pt_origin.x * trans[0] + trans[4],
+      y: pt_origin.y * trans[3] + trans[5],
+    }
+    // console.log(pt_before, pt_origin, pt_after)
+    this.viewportTransform[4] += pt_before.x - pt_after.x
+    this.viewportTransform[5] += pt_before.y - pt_after.y
+    // updateMiniMapVP();
+    opt.e.preventDefault();
+    opt.e.stopPropagation();
+  });
+  canvas.on('mouse:down', function(opt) {
+    var evt = opt.e;
+    if (evt.altKey === true) {
+      this.isDragging = true;
+      this.selection = false;
+      this.lastPosX = evt.clientX;
+      this.lastPosY = evt.clientY;
+    } else {
+      this.isDragging = false;
+      this.selection = true;
+    }
+  });
+  canvas.on('mouse:move', function(opt) {
+    if (this.isDragging) {
+      if (opt.e.altKey !== true) {
+        this.isDragging = false;
+        this.selection = true;
+        return
+      }
+      var e = opt.e;
+      var vpt = this.viewportTransform;
+      vpt[4] += e.clientX - this.lastPosX;
+      vpt[5] += e.clientY - this.lastPosY;
+      this.requestRenderAll();
+      // updateMiniMapVP();
+      this.lastPosX = e.clientX;
+      this.lastPosY = e.clientY;
+    }
+  });
+  canvas.on('mouse:up', function(opt) {
+    this.isDragging = false;
+    this.selection = true;
+  });
+
+  var indexF;
+  // $('webgl').onclick = function() {
+  //   if (this.checked) {
+  //     fabric.filterBackend = webglBackend;
+  //   } else {
+  //     fabric.filterBackend = canvas2dBackend;
+  //   }
+  // };
+  // fabric.filterBackend = canvas2dBackend;
+  fabric.filterBackend = webglBackend;
+  canvas.multilayer_view = {}
+
+  var layer_list = document.querySelectorAll('#layerlist > label > input[type="radio"]');
+  canvas.multilayer_view.num_layers = layer_list.length;
+  layer_list.forEach(layer => {
+    loadLayer(layer.value)
+    layer.onchange = function(e) {
+      console.log(layer.checked)
+      if (!layer.checked) {
+        return;
+      }
+      var count = 0;
+      var num = canvas.multilayer_view.num_layers;
+      for (var key in layer_map) {
+        if (key == layer.value) {
+          layer_map[key].moveTo(num - 1);
+          layer_map[key].visible = true;
+          console.log(key, num - 1);
+        } else {
+          layer_map[key].moveTo(count);
+          layer_map[key].visible = false;
+          console.log(key, count);
+          count ++;
+        }
+      }
+    }
+  });
+
+  document.onkeypress = function(e) {
+    // console.log(e)
+    var ch_idx = Number(e.key)
+    if (ch_idx && ch_idx - 1 >= 0 && ch_idx - 1 < layer_list.length) {
+      layer = layer_list[ch_idx - 1];
+      layer.click()
+    }
+  }
+
+  var defect_list = document.querySelectorAll('#defectlist > label > input[type="checkbox"]');
+  canvas.multilayer_view.num_defects = defect_list.length;
+  defect_list.forEach(df => {
+    var shape_node = [...df.parentNode.childNodes].filter(
+      n => n.getAttribute && n.getAttribute('class') == 'shape_json'
+    )[0]
+    var shape_json = JSON.parse(shape_node.innerHTML)
+    var shape = drawShape(shape_json)
+    shape.shape_id = df.getAttribute('id')
+    console.log(shape.shape_id)
+    shape_map[shape.shape_id] = shape
+
+    df.parentNode.onmouseenter = function(e) {
+      var shape_id = [...this.childNodes].filter(n => n.tagName === 'INPUT')[0].getAttribute('id')
+      var shape = shape_map[shape_id].getObjects('text').forEach(obj => {
+        obj.set('textBackgroundColor', '#ffffff3f');
+      })
+      canvas.renderAll()
+    }
+    df.parentNode.onmouseleave = function(e) {
+      var shape_id = [...this.childNodes].filter(n => n.tagName === 'INPUT')[0].getAttribute('id')
+      var shape = shape_map[shape_id].getObjects('text').forEach(obj => {
+        obj.set('textBackgroundColor', 'transparent');
+      })
+      canvas.renderAll()
+    }
+    df.onchange = function(e) {
+      var shape_id = this.getAttribute('id');
+      console.log(shape_id, this.checked)
+      shape_map[shape_id].visible = this.checked
+      console.log(shape_map[shape_id])
+      canvas.renderAll()
+    }
+  });
+
+  canvas.on('mouse:over', function(e) {
+    // e.target.set('fill', 'red');
+    if (e.target && e.target.shape_id) {
+
+    }
+  });
+
+  canvas.on('mouse:out', function(e) {
+    // e.target.set('fill', 'green');
+    if (e.target && e.target.shape_id) {
+    }
+  });
+
+})();
+</script>
+
+<script>
+(function() {
+  window.addEventListener('load', function() {
+    var canvas = this.__canvas || this.canvas,
+        canvases = this.__canvases || this.canvases;
+
+    canvas && canvas.calcOffset && canvas.calcOffset();
+
+    if (canvases && canvases.length) {
+      for (var i = 0, len = canvases.length; i < len; i++) {
+        canvases[i].calcOffset();
+      }
+    }
+  });
+})();
+</script>
+
+</body>
