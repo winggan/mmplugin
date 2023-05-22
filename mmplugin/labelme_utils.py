@@ -28,7 +28,9 @@ def parse_grid(grid_str: str) -> Tuple[int, int]:
 def get_shapes(data: Dict[str, Any]) -> List[Shape]:
     assert isinstance(data, dict)
     assert 'shapes' in data and isinstance(data['shapes'], list)
-    shapes = [Shape(**s) for s in data['shapes']]
+    exp_keys = set(Shape._fields)
+    shapes = [Shape(**s) for s in data['shapes']
+              if set(s.keys()) == exp_keys]
     assert all(s.shape_type in SUPPORTED_SHAPE_TYPES and
                all(len(t) == 2 for t in s.points) for s in shapes)
     return shapes
